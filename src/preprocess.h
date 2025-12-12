@@ -12,6 +12,7 @@ typedef pcl::PointCloud<PointType> PointCloudXYZI;
 
 enum LID_TYPE
 {
+  UNDIS = 0,
   AVIA = 1,
   VELO16,
   OUST64,
