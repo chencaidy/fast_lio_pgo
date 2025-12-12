@@ -62,6 +62,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
 
@@ -87,7 +88,7 @@ mutex mtx_buffer;
 condition_variable sig_buffer;
 
 string root_dir = ROOT_DIR;
-string map_file_path, lidar_topic, imu_topic;
+string map_file_path, lidar_topic, imu_topic, initial_pose_topic;
 string lidar_frame_id, imu_frame_id;
 
 double res_mean_last = 0.05, total_residual = 0.0;
@@ -137,6 +138,7 @@ MeasureGroup Measures;
 esekfom::esekf<state_ikfom, 12, input_ikfom> kf;
 state_ikfom state_point;
 vect3 pos_lid;
+bool pose_inited_ = false;
 
 nav_msgs::msg::Path path;
 nav_msgs::msg::Odometry odomAftMapped;
@@ -339,6 +341,21 @@ void imu_cbk(const sensor_msgs::msg::Imu::UniquePtr msg_in)
     imu_buffer.push_back(msg);
     mtx_buffer.unlock();
     sig_buffer.notify_all();
+}
+
+void pose_cbk(const geometry_msgs::msg::PoseWithCovarianceStamped::UniquePtr msg_in) {
+    if (pose_inited_ == false) {
+        state_ikfom init_state;
+        init_state.pos(0) = msg_in->pose.pose.position.x;
+        init_state.pos(1) = msg_in->pose.pose.position.y;
+        init_state.pos(2) = msg_in->pose.pose.position.z;
+        init_state.rot.coeffs()[0] = msg_in->pose.pose.orientation.x;
+        init_state.rot.coeffs()[1] = msg_in->pose.pose.orientation.y;
+        init_state.rot.coeffs()[2] = msg_in->pose.pose.orientation.z;
+        init_state.rot.coeffs()[3] = msg_in->pose.pose.orientation.w;
+        kf.change_x(init_state);
+        pose_inited_ = true;
+    }
 }
 
 double lidar_mean_scantime = 0.0;
@@ -764,8 +781,9 @@ public:
         this->declare_parameter<bool>("publish.scan_bodyframe_pub_en", true);
         this->declare_parameter<int>("max_iteration", 4);
         this->declare_parameter<string>("map_file_path", "");
-        this->declare_parameter<string>("common.lidar_topic", "/livox/lidar");
-        this->declare_parameter<string>("common.imu_topic", "/livox/imu");
+        this->declare_parameter<string>("common.lidar_topic", "/points");
+        this->declare_parameter<string>("common.imu_topic", "/imu");
+        this->declare_parameter<string>("common.initial_pose_topic", "/pose");
         this->declare_parameter<bool>("common.time_sync_en", false);
         this->declare_parameter<double>("common.time_offset_lidar_to_imu", 0.0);
         this->declare_parameter<double>("filter_size_corner", 0.5);
@@ -800,8 +818,9 @@ public:
         this->get_parameter_or<bool>("publish.scan_bodyframe_pub_en", scan_body_pub_en, true);
         this->get_parameter_or<int>("max_iteration", NUM_MAX_ITERATIONS, 4);
         this->get_parameter_or<string>("map_file_path", map_file_path, "");
-        this->get_parameter_or<string>("common.lidar_topic", lidar_topic, "/livox/lidar");
-        this->get_parameter_or<string>("common.imu_topic", imu_topic,"/livox/imu");
+        this->get_parameter_or<string>("common.lidar_topic", lidar_topic, "/points");
+        this->get_parameter_or<string>("common.imu_topic", imu_topic,"/imu");
+        this->get_parameter_or<string>("common.initial_pose_topic", initial_pose_topic, "/pose");
         this->get_parameter_or<bool>("common.time_sync_en", time_sync_en, false);
         this->get_parameter_or<double>("common.time_offset_lidar_to_imu", time_diff_lidar_to_imu, 0.0);
         this->get_parameter_or<double>("filter_size_corner",filter_size_corner_min,0.5);
@@ -816,7 +835,6 @@ public:
         this->get_parameter_or<double>("mapping.b_acc_cov",b_acc_cov,0.0001);
         this->get_parameter_or<double>("preprocess.blind", p_pre->blind, 0.01);
         this->get_parameter_or<int>("preprocess.lidar_type", p_pre->lidar_type, AVIA);
-        RCLCPP_INFO(this->get_logger(), "p_pre->lidar_type=%d", p_pre->lidar_type);
         this->get_parameter_or<int>("preprocess.scan_line", p_pre->N_SCANS, 16);
         this->get_parameter_or<int>("preprocess.timestamp_unit", p_pre->time_unit, US);
         this->get_parameter_or<int>("preprocess.scan_rate", p_pre->SCAN_RATE, 10);
@@ -913,6 +931,7 @@ public:
             sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic, rclcpp::SensorDataQoS(), standard_pcl_cbk);
         }
         sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, rclcpp::SensorDataQoS(), imu_cbk);
+        sub_pose_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(initial_pose_topic, rclcpp::SensorDataQoS(), pose_cbk);
         pubLaserCloudFull_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/mapping/cloud_registered", 20);
         pubLaserCloudFull_body_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/mapping/cloud_registered_body", 20);
         pubLaserCloudEffect_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/mapping/cloud_effected", 20);
@@ -1123,6 +1142,7 @@ private:
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pubPath_;
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pcl_pc_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr sub_pose_;
 
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr timer_;
