@@ -10,8 +10,9 @@
         map_file_path: "/home/chen/test.pcd"
 
         common:
-            lid_topic: "/sensor/lidar_fusion/points"
+            lidar_topic: "/sensor/lidar_fusion/points"
             imu_topic: "/sensor/vectornav/imu"
+            initial_pose_topic: "/sensor/vectornav/position"
             # ONLY turn on when external time synchronization is really not possible
             time_sync_en: false
             # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
@@ -19,7 +20,7 @@
             time_offset_lidar_to_imu: 0.0
 
         preprocess:
-            lidar_type: 0 # Undistorted pointclouds
+            lidar_type: 0 # 0 for undistorted pointclouds
             blind: 4.0
 
         mapping:
@@ -30,8 +31,8 @@
             fov_degree: 360.0
             det_range: 250.0
             extrinsic_est_en: false # true: enable the online estimation of IMU-LiDAR extrinsic
-            extrinsic_T: [1.677, 0.000, 0.056]
-            extrinsic_R: [1.000, 0.000, 0.000, 0.000, 1.000, 0.000, 0.000, 0.000, 1.000]
+            lidar_frame_id: "base_link"
+            imu_frame_id: "vectornav_enu"
 
         publish:
             path_en: true

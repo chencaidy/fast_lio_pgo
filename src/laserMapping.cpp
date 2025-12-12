@@ -56,7 +56,10 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include "preprocess.h"
@@ -84,7 +87,8 @@ mutex mtx_buffer;
 condition_variable sig_buffer;
 
 string root_dir = ROOT_DIR;
-string map_file_path, lid_topic, imu_topic;
+string map_file_path, lidar_topic, imu_topic;
+string lidar_frame_id, imu_frame_id;
 
 double res_mean_last = 0.05, total_residual = 0.0;
 double last_timestamp_lidar = 0, last_timestamp_imu = -1.0;
@@ -513,7 +517,7 @@ void publish_frame_body(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Shared
     sensor_msgs::msg::PointCloud2 laserCloudmsg;
     pcl::toROSMsg(*laserCloudIMUBody, laserCloudmsg);
     laserCloudmsg.header.stamp = get_ros_time(lidar_end_time);
-    laserCloudmsg.header.frame_id = "base_link";
+    laserCloudmsg.header.frame_id = imu_frame_id;
     pubLaserCloudFull_body->publish(laserCloudmsg);
     publish_count -= PUBFRAME_PERIOD;
 }
@@ -583,7 +587,7 @@ void set_posestamp(T & out)
 void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped, std::unique_ptr<tf2_ros::TransformBroadcaster> & tf_br)
 {
     odomAftMapped.header.frame_id = "map";
-    odomAftMapped.child_frame_id = "base_link";
+    odomAftMapped.child_frame_id = imu_frame_id;
     odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
     pubOdomAftMapped->publish(odomAftMapped);
@@ -601,7 +605,7 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
 
     geometry_msgs::msg::TransformStamped trans;
     trans.header.frame_id = "map";
-    trans.child_frame_id = "base_link";
+    trans.child_frame_id = imu_frame_id;
     trans.header.stamp = get_ros_time(lidar_end_time);
     trans.transform.translation.x = odomAftMapped.pose.pose.position.x;
     trans.transform.translation.y = odomAftMapped.pose.pose.position.y;
@@ -760,7 +764,7 @@ public:
         this->declare_parameter<bool>("publish.scan_bodyframe_pub_en", true);
         this->declare_parameter<int>("max_iteration", 4);
         this->declare_parameter<string>("map_file_path", "");
-        this->declare_parameter<string>("common.lid_topic", "/livox/lidar");
+        this->declare_parameter<string>("common.lidar_topic", "/livox/lidar");
         this->declare_parameter<string>("common.imu_topic", "/livox/imu");
         this->declare_parameter<bool>("common.time_sync_en", false);
         this->declare_parameter<double>("common.time_offset_lidar_to_imu", 0.0);
@@ -785,8 +789,8 @@ public:
         this->declare_parameter<bool>("mapping.extrinsic_est_en", true);
         this->declare_parameter<bool>("pcd_save.pcd_save_en", false);
         this->declare_parameter<int>("pcd_save.interval", -1);
-        this->declare_parameter<vector<double>>("mapping.extrinsic_T", vector<double>());
-        this->declare_parameter<vector<double>>("mapping.extrinsic_R", vector<double>());
+        this->declare_parameter<string>("mapping.lidar_frame_id", "");
+        this->declare_parameter<string>("mapping.imu_frame_id", "");
 
         this->get_parameter_or<bool>("publish.path_en", path_en, true);
         this->get_parameter_or<bool>("publish.effect_map_en", effect_pub_en, false);
@@ -796,7 +800,7 @@ public:
         this->get_parameter_or<bool>("publish.scan_bodyframe_pub_en", scan_body_pub_en, true);
         this->get_parameter_or<int>("max_iteration", NUM_MAX_ITERATIONS, 4);
         this->get_parameter_or<string>("map_file_path", map_file_path, "");
-        this->get_parameter_or<string>("common.lid_topic", lid_topic, "/livox/lidar");
+        this->get_parameter_or<string>("common.lidar_topic", lidar_topic, "/livox/lidar");
         this->get_parameter_or<string>("common.imu_topic", imu_topic,"/livox/imu");
         this->get_parameter_or<bool>("common.time_sync_en", time_sync_en, false);
         this->get_parameter_or<double>("common.time_offset_lidar_to_imu", time_diff_lidar_to_imu, 0.0);
@@ -812,6 +816,7 @@ public:
         this->get_parameter_or<double>("mapping.b_acc_cov",b_acc_cov,0.0001);
         this->get_parameter_or<double>("preprocess.blind", p_pre->blind, 0.01);
         this->get_parameter_or<int>("preprocess.lidar_type", p_pre->lidar_type, AVIA);
+        RCLCPP_INFO(this->get_logger(), "p_pre->lidar_type=%d", p_pre->lidar_type);
         this->get_parameter_or<int>("preprocess.scan_line", p_pre->N_SCANS, 16);
         this->get_parameter_or<int>("preprocess.timestamp_unit", p_pre->time_unit, US);
         this->get_parameter_or<int>("preprocess.scan_rate", p_pre->SCAN_RATE, 10);
@@ -821,10 +826,36 @@ public:
         this->get_parameter_or<bool>("mapping.extrinsic_est_en", extrinsic_est_en, true);
         this->get_parameter_or<bool>("pcd_save.pcd_save_en", pcd_save_en, false);
         this->get_parameter_or<int>("pcd_save.interval", pcd_save_interval, -1);
-        this->get_parameter_or<vector<double>>("mapping.extrinsic_T", extrinT, vector<double>());
-        this->get_parameter_or<vector<double>>("mapping.extrinsic_R", extrinR, vector<double>());
+        this->get_parameter<string>("mapping.lidar_frame_id", lidar_frame_id);
+        this->get_parameter<string>("mapping.imu_frame_id", imu_frame_id);
 
-        RCLCPP_INFO(this->get_logger(), "p_pre->lidar_type %d", p_pre->lidar_type);
+        // Get transform
+        tf2_ros::Buffer tf_buffer(get_clock());
+        tf2_ros::TransformListener tf_listener(tf_buffer);
+        try {
+            auto tf_lidar_to_imu = tf_buffer.lookupTransform(imu_frame_id, lidar_frame_id, now(), 5s);
+            // Translation
+            auto T = tf_lidar_to_imu.transform.translation;
+            extrinT[0] = T.x;
+            extrinT[1] = T.y;
+            extrinT[2] = T.z;
+            RCLCPP_INFO(this->get_logger(), "Translation: %f %f %f", extrinT[0], extrinT[1], extrinT[2]);
+            // Rotation
+            auto quat = tf_lidar_to_imu.transform.rotation;
+            tf2::Quaternion tf2_quat;
+            tf2::fromMsg(quat, tf2_quat);
+            tf2::Matrix3x3 R(tf2_quat);
+            for (int i = 0; i < 3; i++) {
+                tf2::Vector3 col = R.getRow(i);
+                extrinR[i * 3] = col.x();
+                extrinR[i * 3 + 1] = col.y();
+                extrinR[i * 3 + 2] = col.z();
+                RCLCPP_INFO(this->get_logger(), "Rotation: %f %f %f", col.x(), col.y(), col.z());
+            }
+        } catch (const tf2::TransformException &ex) {
+            RCLCPP_ERROR(this->get_logger(), "Could not lookup transform: %s", ex.what());
+            throw;
+        }
 
         path.header.stamp = this->get_clock()->now();
         path.header.frame_id ="map";
@@ -879,7 +910,7 @@ public:
         }
         else
         {
-            sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic, rclcpp::SensorDataQoS(), standard_pcl_cbk);
+            sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic, rclcpp::SensorDataQoS(), standard_pcl_cbk);
         }
         sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, rclcpp::SensorDataQoS(), imu_cbk);
         pubLaserCloudFull_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/mapping/cloud_registered", 20);
