@@ -1,22 +1,12 @@
 /**:
     ros__parameters:
-        feature_extract_enable: false
-        point_filter_num: 3
-        max_iteration: 3
-        filter_size_surf: 0.5
-        filter_size_map: 0.5
-        cube_side_length: 1000.0
-        runtime_pos_log_enable: false
-        map_file_path: "/home/chen/test.pcd"
-
         common:
             lidar_topic: "/sensor/lidar_fusion/points"
             imu_topic: "/sensor/vectornav/imu"
             initial_pose_topic: "/sensor/vectornav/position"
-            # ONLY turn on when external time synchronization is really not possible
-            time_sync_en: false
+            lidar_frame_id: "base_link"
+            imu_frame_id: "vectornav_enu"
             # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
-            # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
             time_offset_lidar_to_imu: 0.0
 
         preprocess:
@@ -28,20 +18,15 @@
             gyr_cov: 0.1
             b_acc_cov: 0.0001
             b_gyr_cov: 0.0001
-            fov_degree: 360.0
+            cube_side_length: 1000.0
             det_range: 250.0
+            max_iteration: 3
             extrinsic_est_en: false # true: enable the online estimation of IMU-LiDAR extrinsic
-            lidar_frame_id: "base_link"
-            imu_frame_id: "vectornav_enu"
+            filter_size_surf: 0.5
+            filter_size_map: 0.5
 
         publish:
             path_en: true
             scan_publish_en: true # false: close all the point cloud output
             dense_publish_en: true # false: low down the points number in a global-frame point clouds scan.
             scan_bodyframe_pub_en: true # true: output the point cloud scans in IMU-body-frame
-
-        pcd_save:
-            pcd_save_en: false
-            # how many LiDAR frames saved in each pcd file;
-            # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
-            interval: -1

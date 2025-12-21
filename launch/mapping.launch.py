@@ -50,6 +50,22 @@ def generate_launch_description():
                     {'use_sim_time': use_sim_time}],
         output='screen'
     )
+    laser_pgo_node = Node(
+        package='fast_lio',
+        executable='laser_pgo',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'save_directory': '/home/chen/map',
+            'keyframe_meter_gap': 0.5,
+            'mapviz_filter_size': 1.0,
+        }],
+        remappings=[
+            ('/points', '/mapping/cloud_registered_body'),
+            ('/odometry', '/mapping/odometry'),
+            ('/pose', '/sensor/vectornav/position'),
+        ],
+        output='screen'
+    )
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -65,6 +81,7 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_path_cmd)
 
     ld.add_action(fast_lio_node)
+    ld.add_action(laser_pgo_node)
     ld.add_action(rviz_node)
 
     return ld
