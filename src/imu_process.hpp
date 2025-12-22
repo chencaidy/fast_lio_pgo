@@ -6,7 +6,7 @@
 #include <Eigen/Core>
 #include <fstream>
 
-#include <fast_lio/msg/pose6_d.hpp>
+#include <fast_lio_pgo/msg/pose6_d.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 
 class ImuProcess {
@@ -36,14 +36,14 @@ private:
   Eigen::Matrix<double, 12, 12> process_noise_cov();
 
   template <typename T>
-  fast_lio::msg::Pose6D to_pose6d(const double t, const Eigen::Matrix<T, 3, 1> &a, const Eigen::Matrix<T, 3, 1> &g,
-                                  const Eigen::Matrix<T, 3, 1> &v, const Eigen::Matrix<T, 3, 1> &p,
-                                  const Eigen::Matrix<T, 3, 3> &R);
+  fast_lio_pgo::msg::Pose6D to_pose6d(const double t, const Eigen::Matrix<T, 3, 1> &a, const Eigen::Matrix<T, 3, 1> &g,
+                                      const Eigen::Matrix<T, 3, 1> &v, const Eigen::Matrix<T, 3, 1> &p,
+                                      const Eigen::Matrix<T, 3, 3> &R);
 
 private:
   bool imu_need_init_ = true;
   int imu_init_cnt_ = 1;
-  std::vector<fast_lio::msg::Pose6D> imu_pose_;
+  std::vector<fast_lio_pgo::msg::Pose6D> imu_pose_;
   sensor_msgs::msg::Imu::ConstSharedPtr imu_last_;
 
   bool b_first_frame_ = true;

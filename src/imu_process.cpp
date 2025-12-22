@@ -290,10 +290,10 @@ Eigen::Matrix<double, 12, 12> ImuProcess::process_noise_cov() {
 }
 
 template <typename T>
-fast_lio::msg::Pose6D ImuProcess::to_pose6d(const double t, const Eigen::Matrix<T, 3, 1> &a,
-                                            const Eigen::Matrix<T, 3, 1> &g, const Eigen::Matrix<T, 3, 1> &v,
-                                            const Eigen::Matrix<T, 3, 1> &p, const Eigen::Matrix<T, 3, 3> &R) {
-  fast_lio::msg::Pose6D rot_kp;
+fast_lio_pgo::msg::Pose6D ImuProcess::to_pose6d(const double t, const Eigen::Matrix<T, 3, 1> &a,
+                                                const Eigen::Matrix<T, 3, 1> &g, const Eigen::Matrix<T, 3, 1> &v,
+                                                const Eigen::Matrix<T, 3, 1> &p, const Eigen::Matrix<T, 3, 3> &R) {
+  fast_lio_pgo::msg::Pose6D rot_kp;
   rot_kp.offset_time = t;
   for (int i = 0; i < 3; i++) {
     rot_kp.acc[i] = a(i);
